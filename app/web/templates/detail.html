@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ company.legal_name }}{% endblock %}
+{% block content %}
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h2>{{ company.legal_name }}</h2>
+  <p class="muted" style="margin-top:0">
+    {{ company.pilot_id or company.id }} &middot;
+    company no <a href="{{ company.companies_house_url }}" target="_blank" rel="noopener">{{ company.company_number }}</a> &middot;
+    {{ company.company_status or 'status unknown' }} &middot;
+    SIC {{ company.sic_codes or 'none' }} &middot;
+    registered office in {{ company.registered_locality or 'unknown' }}
+    {% if company.registered_postcode %}({{ company.registered_postcode }}){% endif %}
+  </p>
+  {% if company.adverse_status_flag %}
+    <p><span class="pill stop">{{ company.adverse_status_reason }}</span>
+    <span class="muted">Both gates are held while this stands.</span></p>
+  {% endif %}
+  <p class="muted">
+    Registered office is not a trading address. Website:
+    {% if company.website_url %}
+      <a href="{{ company.website_url }}" target="_blank" rel="noopener">{{ company.website_url }}</a>
+      <span class="pill {{ 'ok' if company.website_match_status == 'LINKED' else 'hold' }}">{{ company.website_match_status }}</span>
+      <br>{{ company.website_match_rationale }}
+    {% else %}none found{% endif %}
+  </p>
+  <p class="muted">Course fit: {{ company.course_match or 'not assessed' }}</p>
+</div>
+
+<div class="card">
+  <h2>Evidence score {{ company.score_total }}/100 &middot; {{ company.score_band or '-' }}</h2>
+  <p class="muted" style="margin-top:0">
+    This measures how well evidenced the record is. It is not a sales qualification
+    and it does not open either gate.
+  </p>
+  <pre class="muted" style="white-space:pre-wrap;margin:0">{{ company.score_reasons or 'Not scored yet.' }}</pre>
+</div>
+
+<div class="grid2">
+
+  <div class="card">
+    <h2>Calling route (Abby)</h2>
+    {% set g = company.call_gate %}
+    {% if not g %}
+      <p class="muted">No call gate yet. Run stage 09.</p>
+    {% else %}
+      <p>
+        Number: <strong>{{ g.phone_e164 or 'none on file' }}</strong><br>
+        {% if g.phone_evidence_url %}
+          <a class="muted" href="{{ g.phone_evidence_url }}" target="_blank" rel="noopener">source</a>
+        {% endif %}
+      </p>
+      <p>
+        TPS <span class="pill {{ 'ok' if g.tps_result == 'CLEAR' else 'hold' }}">{{ g.tps_result }}</span>
+        CTPS <span class="pill {{ 'ok' if g.ctps_result == 'CLEAR' else 'hold' }}">{{ g.ctps_result }}</span>
+        {% if g.screening_expired(valid_days) %}
+          <span class="pill stop">expired</span>
+        {% endif %}
+      </p>
+      {% if g.screening_receipt %}<p class="muted">Receipt: {{ g.screening_receipt }}</p>{% endif %}
+
+      <form method="post" action="/company/{{ company.id }}/checklist">
+        <input type="hidden" name="channel" value="call">
+        <label class="check"><input type="checkbox" name="internal_dnc" {% if g.internal_dnc_checked %}checked{% endif %}> Internal do-not-call list checked</label>
+        <label class="check"><input type="checkbox" name="gdpr_review" {% if g.gdpr_review_done %}checked{% endif %}> UK GDPR review done</label>
+        <label class="check"><input type="checkbox" name="caller_id" {% if g.caller_id_configured %}checked{% endif %}> Caller identification configured</label>
+        <div class="field-row">
+          <span>Current ownership of the number</span>
+          <select name="phone_ownership">
+            {% for opt in ['UNKNOWN','CANDIDATE','LINKED'] %}
+              <option value="{{ opt }}" {% if g.phone_ownership_status == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit">Save checks</button>
+      </form>
+
+      <p style="margin-top:16px">
+        Auto gate:
+        <span class="pill {{ 'ok' if g.auto_gate_result == 'APPROVED' else 'hold' }}">{{ g.auto_gate_result }}</span>
+      </p>
+      {% if g.auto_gate_reason %}<p class="reason">{{ g.auto_gate_reason }}</p>{% endif %}
+
+      <p>
+        Human authorisation:
+        <span class="pill {{ 'ok' if g.human_decision == 'APPROVED' else 'hold' }}">{{ g.human_decision }}</span>
+        {% if g.approved_by %}<span class="muted">by {{ g.approved_by }} at {{ g.approved_at }}</span>{% endif %}
+      </p>
+
+      <form method="post" action="/company/{{ company.id }}/decide">
+        <input type="hidden" name="channel" value="call">
+        <div class="field-row">
+          <span>Approver</span>
+          <select name="approver">
+            {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            {% if not approvers %}<option value="">set AUTHORISED_APPROVERS in .env</option>{% endif %}
+          </select>
+        </div>
+        <div class="field-row">
+          <span>Note</span>
+          <input type="text" name="note" placeholder="What you checked, and anything the next person should know">
+        </div>
+        <button class="primary" type="submit" name="decision" value="APPROVED">Approve calling</button>
+        <button type="submit" name="decision" value="HOLD">Hold</button>
+        <button class="danger" type="submit" name="decision" value="REJECTED">Reject</button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Email route (Marcus)</h2>
+    {% set e = company.email_gate %}
+    {% if not e %}
+      <p class="muted">No email gate yet. Run stage 09.</p>
+    {% else %}
+      <p>
+        Mailbox: <strong>{{ e.email_candidate or 'none on file' }}</strong><br>
+        {% if e.email_evidence_url %}
+          <a class="muted" href="{{ e.email_evidence_url }}" target="_blank" rel="noopener">source</a>
+        {% endif %}
+      </p>
+      <p class="muted">
+        TPS and CTPS are irrelevant on this route. Corporate subscriber status,
+        lawful basis, the privacy notice, suppression and a working opt-out are
+        what matter.
+      </p>
+
+      <form method="post" action="/company/{{ company.id }}/checklist">
+        <input type="hidden" name="channel" value="email">
+        <div class="field-row">
+          <span>Subscriber category</span>
+          <select name="subscriber_category">
+            {% for opt, label in [
+              ('REVIEW_LIKELY_CORPORATE','Not yet determined'),
+              ('CORPORATE','Corporate subscriber (limited company, LLP)'),
+              ('INDIVIDUAL','Individual subscriber (sole trader, some partnerships)')] %}
+              <option value="{{ opt }}" {% if e.subscriber_category == opt %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" name="lawful_basis" {% if e.lawful_basis_recorded %}checked{% endif %}> UK GDPR lawful basis recorded</label>
+        <label class="check"><input type="checkbox" name="privacy_notice" {% if e.privacy_notice_ready %}checked{% endif %}> Privacy notice ready to serve</label>
+        <label class="check"><input type="checkbox" name="suppression" {% if e.suppression_checked %}checked{% endif %}> Internal suppression checked</label>
+        <label class="check"><input type="checkbox" name="sender_optout" {% if e.sender_and_optout_ready %}checked{% endif %}> Sender identity and opt-out in place</label>
+        <label class="check"><input type="checkbox" name="course_offer" {% if e.course_offer_checked %}checked{% endif %}> Course offer confirmed with ops</label>
+        <button type="submit">Save checks</button>
+      </form>
+
+      <p style="margin-top:16px">
+        Auto gate:
+        <span class="pill {{ 'ok' if e.auto_gate_result == 'APPROVED' else 'hold' }}">{{ e.auto_gate_result }}</span>
+      </p>
+      {% if e.auto_gate_reason %}<p class="reason">{{ e.auto_gate_reason }}</p>{% endif %}
+
+      <p>
+        Human authorisation:
+        <span class="pill {{ 'ok' if e.human_decision == 'APPROVED' else 'hold' }}">{{ e.human_decision }}</span>
+        {% if e.approved_by %}<span class="muted">by {{ e.approved_by }} at {{ e.approved_at }}</span>{% endif %}
+      </p>
+
+      <form method="post" action="/company/{{ company.id }}/decide">
+        <input type="hidden" name="channel" value="email">
+        <div class="field-row">
+          <span>Approver</span>
+          <select name="approver">
+            {% for name in approvers %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            {% if not approvers %}<option value="">set AUTHORISED_APPROVERS in .env</option>{% endif %}
+          </select>
+        </div>
+        <div class="field-row">
+          <span>Note</span>
+          <input type="text" name="note" placeholder="What you checked, and anything the next person should know">
+        </div>
+        <button class="primary" type="submit" name="decision" value="APPROVED">Approve email</button>
+        <button type="submit" name="decision" value="HOLD">Hold</button>
+        <button class="danger" type="submit" name="decision" value="REJECTED">Reject</button>
+      </form>
+    {% endif %}
+  </div>
+
+</div>
+
+<div class="card">
+  <h2>Evidence ledger</h2>
+  <table>
+    <thead><tr><th>Field</th><th>Value</th><th>Source</th><th>Match</th><th>Checked</th><th>Follow up</th></tr></thead>
+    <tbody>
+    {% for ev in evidence %}
+      <tr {% if ev.superseded %}class="muted"{% endif %}>
+        <td>{{ ev.field }}{% if ev.superseded %} <span class="pill neutral">superseded</span>{% endif %}</td>
+        <td>{{ ev.observed_value }}</td>
+        <td>
+          {{ ev.source_class }}
+          {% if ev.source_url %}<br><a class="muted" href="{{ ev.source_url }}" target="_blank" rel="noopener">link</a>{% endif %}
+        </td>
+        <td><span class="pill {{ 'ok' if ev.entity_match_status == 'LINKED' else 'neutral' }}">{{ ev.entity_match_status }}</span></td>
+        <td>{{ ev.checked_date }}</td>
+        <td class="muted">{{ ev.follow_up or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No evidence recorded.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

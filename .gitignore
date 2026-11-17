@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+exports/
+screening/*.csv
+.pytest_cache/

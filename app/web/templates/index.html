@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <div class="stats">
+    <div class="stat"><span class="n">{{ totals.companies }}</span><span class="l">companies researched</span></div>
+    <div class="stat"><span class="n">{{ totals.with_phone }}</span><span class="l">numbers found</span></div>
+    <div class="stat"><span class="n">{{ totals.with_email }}</span><span class="l">mailboxes found</span></div>
+    <div class="stat"><span class="n">{{ totals.call_approved }}</span><span class="l">callable, signed off</span></div>
+    <div class="stat"><span class="n">{{ totals.email_approved }}</span><span class="l">emailable, signed off</span></div>
+  </div>
+  <p class="muted" style="margin-bottom:0">
+    A company found is not a lead you may contact. Screening results expire after {{ valid_days }} days and the gate closes again on its own.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Filter</h2>
+  <p class="muted" style="margin-top:0">
+    <a href="/?band=">All</a> &nbsp;
+    <a href="/?band=STRONG">Strong evidence (80+)</a> &nbsp;
+    <a href="/?band=REVIEW">Review (55 to 79)</a> &nbsp;
+    <a href="/?band=ENRICH">Needs enrichment (under 55)</a>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Register</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Company</th><th>Status</th><th>Score</th>
+        <th>Call route</th><th>Email route</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in companies %}
+      <tr>
+        <td class="muted">{{ c.pilot_id or c.id }}</td>
+        <td>
+          <a href="/company/{{ c.id }}">{{ c.legal_name }}</a><br>
+          <span class="muted">{{ c.company_number }} &middot; {{ c.registered_locality or 'location unknown' }}</span>
+        </td>
+        <td>
+          {% if c.adverse_status_flag %}
+            <span class="pill stop">{{ c.adverse_status_reason or 'adverse' }}</span>
+          {% else %}
+            <span class="pill neutral">{{ c.company_status or 'unknown' }}</span>
+          {% endif %}
+        </td>
+        <td>
+          <strong>{{ c.score_total }}</strong><span class="muted">/100</span><br>
+          <span class="muted">{{ c.score_band or '-' }}</span>
+        </td>
+        <td>
+          {% if c.call_gate and c.call_gate.human_decision == 'APPROVED' %}
+            <span class="pill ok">approved</span><br>
+            <span class="muted">by {{ c.call_gate.approved_by }}</span>
+          {% elif c.call_gate and c.call_gate.phone_e164 %}
+            <span class="pill hold">hold</span><br>
+            <span class="muted">{{ c.call_gate.phone_e164 }}</span>
+          {% else %}
+            <span class="muted">no number</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.email_gate and c.email_gate.human_decision == 'APPROVED' %}
+            <span class="pill ok">approved</span><br>
+            <span class="muted">by {{ c.email_gate.approved_by }}</span>
+          {% elif c.email_gate and c.email_gate.email_candidate %}
+            <span class="pill hold">hold</span><br>
+            <span class="muted">{{ c.email_gate.email_candidate }}</span>
+          {% else %}
+            <span class="muted">no mailbox</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">
+        Nothing here yet. Run <code>python run.py intake --trade roofing --location birmingham</code> to start.
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
